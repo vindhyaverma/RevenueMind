@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+sqlalchemy
+asyncpg
+alembic
+razorpay
+google-genai
+httpx
+pytest
+pytest-asyncio
+python-dotenv
+tenacity
+slowapi
+hypothesis
