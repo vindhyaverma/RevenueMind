@@ -49,7 +49,8 @@ async def shop(
     except Exception as e:
         logger.error("api.agent.shop_failed", error=str(e), session_id=str(session_id))
         # Rollback the transaction in case it was left in a failed state
-        await db.session.rollback()
+        if hasattr(db, "session"):
+            await db.session.rollback()
         try:
             await db.log_audit(session_id, "agent_failed", {"error": str(e)})
         except Exception:
@@ -80,7 +81,28 @@ async def razorpay_webhook(
     if session_id:
         try:
             sess_uuid = uuid.UUID(session_id)
-            await db.log_audit(sess_uuid, f"webhook_received:{event_type}", {"payment_id": payment.get("id")})
+            
+            if event_type == "payment.captured":
+                order_id = payment.get("order_id")
+                if order_id:
+                    await db.update_order_status_by_razorpay_id(order_id, "paid")
+                await db.log_audit(sess_uuid, "payment_confirmed", {
+                    "payment_id": payment.get("id"),
+                    "order_id": order_id,
+                    "amount_paise": payment.get("amount")
+                })
+            elif event_type == "payment.failed":
+                order_id = payment.get("order_id")
+                if order_id:
+                    await db.release_inventory_by_order(order_id)
+                    await db.update_order_status_by_razorpay_id(order_id, "failed")
+                await db.log_audit(sess_uuid, "payment_failed", {
+                    "reason": payment.get("error_description", "Unknown"),
+                    "payment_id": payment.get("id"),
+                    "order_id": order_id
+                })
+            else:
+                await db.log_audit(sess_uuid, f"webhook_received:{event_type}", {"payment_id": payment.get("id")})
         except ValueError:
             pass
             

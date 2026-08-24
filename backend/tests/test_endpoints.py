@@ -59,9 +59,12 @@ class MockDB:
     async def has_order(self, session_id, product_id):
         return False
         
-    async def save_order(self, session_id, mandate_id, product_id, order_id, amount, idempotency_key):
-        pass
+    async def reserve_inventory_atomic(self, product_id):
+        return True
         
+    async def save_order(self, session_id, mandate_id, product_id, order_id, amount_paise, idempotency_key):
+        pass
+
     async def log_audit(self, session_id, event_type, payload):
         event = AuditEvent(session_id=session_id, event_type=event_type, payload=payload)
         self.events.append(event)

@@ -2,7 +2,9 @@
 
 > **AI recommends. Deterministic code decides.**
 
-MerchantMind gives any Razorpay merchant an AI-transactable storefront: machine-readable products, a deterministic spending policy engine, and a full Razorpay payment flow — so AI agents can discover, evaluate, and safely purchase end-to-end, with every financial action bounded, auditable, and recoverable.
+An AI buyer can now shop a Razorpay merchant's storefront and check out on its own — MerchantMind is the layer that makes that safe. It picks products, checks a strict spending policy, and completes a payment end to end, with every step logged and every irreversible action gated behind a deterministic check.
+
+By exposing a merchant's catalog in a machine-readable format with built-in financial guardrails, MerchantMind opens an entirely new revenue channel: autonomous AI shoppers.
 
 ## What This Is
 

@@ -25,27 +25,32 @@ class AgentOrchestrator:
         mandate_id: uuid.UUID,
         user_intent: str
     ):
-        # ── Step 1: Parse Intent (AI) ────────────────────────────────────────
+        # ── Step 1: AI Intent Parsing ─────────────────────────────────────────
         parsed_intent = await self.ai.parse_intent(user_intent)
-        logger.info(
-            "agent.intent_parsed",
-            session_id=str(session_id),
-            intent=parsed_intent.model_dump()
-        )
+        await self.db.log_audit(session_id, "intent_parsed", {
+            "category": parsed_intent.category,
+            "max_price_paise": parsed_intent.max_price_paise,
+            "query": parsed_intent.query
+        })
 
-        # ── Step 2: Search Catalog (DB) ──────────────────────────────────────
+        # ── Step 2: Catalog Lookup (Deterministic) ──────────────────────────
         products = await self.db.search_products(
-            parsed_intent.category, parsed_intent.max_price_paise
+            parsed_intent.category,
+            parsed_intent.max_price_paise,
         )
         if not products:
-            raise Exception("No products found matching intent constraints")
+            raise ProductNotFoundError("No products found matching intent constraints")
 
-        # Snapshot original prices so we can detect staleness during preflight.
         original_prices = {p.id: p.price_paise for p in products}
 
-        # ── Step 3: Rank Products (AI) ───────────────────────────────────────
+        # ── Step 3: AI Product Ranking ────────────────────────────────────────
         ranking = await self.ai.rank_products(parsed_intent, products)
         selected_product_id = ranking.selected_product_id
+        
+        await self.db.log_audit(session_id, "product_selected", {
+            "product_id": str(selected_product_id),
+            "ai_reason": ranking.reason
+        })
 
         # ── Recovery loop: max 3 attempts ────────────────────────────────────
         max_attempts = 3
@@ -80,6 +85,13 @@ class AgentOrchestrator:
                     session_id, "policy_blocked", {"reason": policy_res.reason}
                 )
                 raise AgentNotAuthorizedError(policy_res.reason)
+            
+            await self.db.log_audit(session_id, "policy_check_passed", {
+                "amount_paise": product.price_paise,
+                "daily_spent_paise": daily_spent,
+                "transaction_limit": mandate.transaction_limit_paise,
+                "category": product.category
+            })
 
             # ── Step 5: Preflight Guard (Deterministic) ──────────────────────
             has_order = await self.db.has_order(session_id, product.id)
@@ -122,6 +134,11 @@ class AgentOrchestrator:
                     continue
                 else:
                     raise IdempotencyConflictError(guard_res.reason)
+                    
+            await self.db.log_audit(session_id, "preflight_passed", {
+                "inventory": product.inventory,
+                "price_paise": product.price_paise
+            })
 
             # ── Step 7: Atomic Inventory Reservation ─────────────────────────
             # This closes the TOCTOU race condition window.

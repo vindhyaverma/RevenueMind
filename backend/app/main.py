@@ -76,6 +76,7 @@ async def seed_demo_data():
 
     logger.info("demo.data_seeded", products=len(products), mandate_id="00000000-0000-0000-0000-000000000000")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("app.startup", status="initializing", demo_mode=DEMO_MODE)

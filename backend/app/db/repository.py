@@ -148,6 +148,25 @@ class DBRepository:
 
         await self.session.commit()
 
+    async def update_order_status_by_razorpay_id(self, razorpay_order_id: str, status: str) -> None:
+        """Update the status of an order after a webhook."""
+        await self.session.execute(
+            update(AgentOrder)
+            .where(AgentOrder.razorpay_order_id == razorpay_order_id)
+            .values(status=status)
+        )
+        await self.session.commit()
+
+    async def release_inventory_by_order(self, razorpay_order_id: str) -> None:
+        """Release reserved inventory if the payment fails."""
+        result = await self.session.execute(
+            select(AgentOrder.product_id)
+            .where(AgentOrder.razorpay_order_id == razorpay_order_id)
+        )
+        product_id = result.scalar_one_or_none()
+        if product_id:
+            await self.release_inventory(product_id)
+
     async def log_audit(self, session_id: uuid.UUID, event_type: str, payload: dict):
         event = AuditEvent(
             session_id=session_id,
