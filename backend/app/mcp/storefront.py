@@ -1,77 +1,142 @@
+"""
+RevenueMind MCP Server — Recovery tools for AI agents.
+
+Every tool routes through the deterministic RecoveryPolicyEngine.
+MCP is NOT an alternate payment path. It enforces the same policy rules.
+"""
+
 from mcp.server.fastmcp import FastMCP
-from typing import Optional, List
+from typing import Optional
 import uuid
 
-# In a real environment, we would inject the database and orchestrator 
-# dynamically or via context, but for MCP server simplicity we will define
-# tools that interact with the MerchantMind REST API or DB directly.
+mcp = FastMCP("RevenueMind Recovery")
 
-# To keep the AI bound, the MCP tools don't directly execute payments, 
-# they use the Orchestrator or the REST endpoints.
-
-mcp = FastMCP("MerchantMind Storefront")
-
-# Mocking the dependency injection for MCP context
 from app.db.session import AsyncSessionLocal
-from app.db.repository import DBRepository
-from app.ai.gemini_provider import GeminiProvider
-from app.core.razorpay_client import RazorpayClient
-from app.api.agent import AgentOrchestrator
+from app.db.recovery_repository import RecoveryRepository
+from app.core.recovery_policy_engine import RecoveryPolicyEngine, DEFAULT_POLICY
 
-async def get_orchestrator():
+
+async def get_recovery_repo():
     session = AsyncSessionLocal()
-    db = DBRepository(session)
-    ai = GeminiProvider()
-    rzp = RazorpayClient()
-    return AgentOrchestrator(ai, rzp, db), db, session
+    return RecoveryRepository(session), session
+
 
 @mcp.tool()
-async def search_catalog(category: str, max_price_paise: int) -> list:
-    """Search the merchant's catalog for products."""
-    orchestrator, db, session = await get_orchestrator()
+async def get_revenue_at_risk() -> dict:
+    """Get current revenue-at-risk metrics for the merchant."""
+    db, session = await get_recovery_repo()
     try:
-        products = await db.search_products(category, max_price_paise)
-        return [p.model_dump(mode="json") for p in products]
+        metrics = await db.get_metrics()
+        return metrics.model_dump()
     finally:
         await session.close()
 
+
 @mcp.tool()
-async def get_product(product_id: str) -> dict:
-    """Get details for a specific product."""
-    orchestrator, db, session = await get_orchestrator()
+async def list_recovery_cases(status: Optional[str] = None, failure_class: Optional[str] = None) -> list:
+    """List revenue recovery cases, optionally filtered by status or failure class."""
+    db, session = await get_recovery_repo()
     try:
-        product = await db.get_product(uuid.UUID(product_id))
-        return product.model_dump(mode="json")
+        cases, total = await db.list_cases(status=status, failure_class=failure_class, size=50)
+        return [
+            {
+                "case_ref": c.case_ref,
+                "customer_name": c.customer_name,
+                "amount_paise": c.amount_paise,
+                "failure_type": c.failure_type,
+                "status": c.status,
+                "recovered_amount_paise": c.recovered_amount_paise,
+            }
+            for c in cases
+        ]
     finally:
         await session.close()
 
+
 @mcp.tool()
-async def create_purchase_intent(session_id: str, mandate_id: str, user_intent: str) -> dict:
+async def get_recovery_case(case_ref: str) -> dict:
+    """Get full details for a specific recovery case including AI diagnosis and policy decision."""
+    db, session = await get_recovery_repo()
+    try:
+        case = await db.get_case_by_ref(case_ref)
+        if not case:
+            return {"error": f"Case {case_ref} not found"}
+        return {
+            "case_ref": case.case_ref,
+            "customer_name": case.customer_name,
+            "amount_paise": case.amount_paise,
+            "failure_type": case.failure_type,
+            "failure_reason": case.failure_reason,
+            "failure_class": case.failure_class,
+            "ai_diagnosis": case.ai_diagnosis,
+            "ai_recommendation": case.ai_recommendation,
+            "ai_confidence": case.ai_confidence,
+            "policy_result": case.policy_result,
+            "policy_reason": case.policy_reason,
+            "status": case.status,
+            "recovered_amount_paise": case.recovered_amount_paise,
+            "is_simulated_recovery": case.is_simulated_recovery,
+            "escalated": case.escalated,
+            "stopped_by_policy": case.stopped_by_policy,
+        }
+    finally:
+        await session.close()
+
+
+@mcp.tool()
+async def recommend_recovery(case_ref: str) -> dict:
     """
-    Submits a purchase intent. The system will parse the intent, 
-    check mandate, run preflight guards, and attempt purchase.
+    Get the deterministic policy recommendation for a case.
+    This is what the RecoveryPolicyEngine would decide — AI cannot override this.
     """
-    orchestrator, db, session = await get_orchestrator()
+    db, session = await get_recovery_repo()
     try:
-        sess_uuid = uuid.UUID(session_id)
-        mand_uuid = uuid.UUID(mandate_id)
-        await db.log_audit(sess_uuid, "mcp_intent_received", {"intent": user_intent})
-        result = await orchestrator.process_intent(sess_uuid, mand_uuid, user_intent)
-        return result
-    except Exception as e:
-        return {"error": str(e), "status": "failed"}
+        case = await db.get_case_by_ref(case_ref)
+        if not case:
+            return {"error": f"Case {case_ref} not found"}
+
+        policy_result = RecoveryPolicyEngine.validate(
+            failure_type=case.failure_type,
+            recovery_attempts=case.recovery_attempts,
+            customer_contacts=case.customer_contacts,
+        )
+
+        return {
+            "case_ref": case_ref,
+            "amount_paise": case.amount_paise,
+            "failure_type": case.failure_type,
+            "policy_permitted": policy_result.permitted,
+            "recommended_action": policy_result.action,
+            "reason": policy_result.reason,
+            "escalate": policy_result.escalate,
+            "stop": policy_result.stop,
+            "note": "This decision is deterministic. AI cannot override it.",
+        }
     finally:
         await session.close()
 
+
 @mcp.tool()
-async def get_order_status(session_id: str) -> dict:
-    """Retrieve the audit and order status for a session."""
-    orchestrator, db, session = await get_orchestrator()
+async def get_recovery_status(case_ref: str) -> dict:
+    """Get the current recovery status and outcome for a case."""
+    db, session = await get_recovery_repo()
     try:
-        events = await db.get_audit_trail(uuid.UUID(session_id))
-        return {"events": [{"type": e.event_type, "payload": e.payload} for e in events]}
+        case = await db.get_case_by_ref(case_ref)
+        if not case:
+            return {"error": f"Case {case_ref} not found"}
+        audit = await db.get_case_audit_trail(str(case.id))
+        return {
+            "case_ref": case_ref,
+            "status": case.status,
+            "final_outcome": case.final_outcome,
+            "recovered_amount_paise": case.recovered_amount_paise,
+            "is_simulated_recovery": case.is_simulated_recovery,
+            "payment_link_url": case.payment_link_url,
+            "audit_events": len(audit),
+        }
     finally:
         await session.close()
+
 
 if __name__ == "__main__":
     mcp.run()

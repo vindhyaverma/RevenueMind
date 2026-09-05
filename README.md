@@ -1,159 +1,80 @@
-# MerchantMind — The AI-Native Commerce Layer for Razorpay Merchants
+# RevenueMind 🚀
 
-> **AI recommends. Deterministic code decides.**
+**Every failed payment is revenue at risk. RevenueMind brings it back.**
 
-An AI buyer can now shop a Razorpay merchant's storefront and check out on its own — MerchantMind is the layer that makes that safe. It picks products, checks a strict spending policy, and completes a payment end to end, with every step logged and every irreversible action gated behind a deterministic check.
+RevenueMind is an autonomous revenue recovery control tower for merchants, built for the **Razorpay AI Buildathon (Track 03: AI Revenue Recovery)**. 
 
-By exposing a merchant's catalog in a machine-readable format with built-in financial guardrails, MerchantMind opens an entirely new revenue channel: autonomous AI shoppers.
+It acts as an intelligent recovery agent that detects dropped or failed payments via live webhooks, diagnoses the likely cause, mathematically computes the highest-value intervention (Expected Value), and deterministically executes the recovery policy to get your money back.
 
-## What This Is
+### The Problem
+Traditional retries are rigid. Sending every abandoned checkout a generic email is annoying, and retrying a hard-declined card is a waste of time (and increases processing fees). Merchants are leaving millions on the table because they lack context-aware, targeted recovery pipelines.
 
-MerchantMind is **not** a chatbot with a payment link. It is the safety and transaction layer that makes AI-powered commerce possible **without giving the AI unrestricted control over money**.
+### The RevenueMind Solution
+RevenueMind introduces the **Next Best Action (NBA) Expected Value Matrix**:
+`Expected Value = (Recovery Probability × Amount at Risk) - Intervention Cost`
 
-### What AI Does
-- Natural-language intent understanding ("Order a birthday cake under ₹500")
-- Semantic product matching and ranking
-- Recovery reasoning when a product becomes unavailable
+Instead of blind retries, the AI dynamically evaluates intervention candidates (e.g., Simulated Voice Call vs. WhatsApp vs. Payment Link) and computes their Expected Value. The system is protected by a strict deterministic `RecoveryPolicyEngine` to enforce business rules—ensuring the AI can never override retry limits, customer contact limits, or fraud protections.
 
-### What AI Cannot Do
-- Control money
-- Bypass the PolicyEngine
-- Determine the payment amount (comes from DB, never from AI)
-- Authorize transactions
-- Modify inventory truth
-- Bypass PreflightGuard
-- Bypass idempotency checks
-- Generate webhook signatures
-- Call Razorpay APIs directly
+## Key Features
+
+- **Next Best Action Matrix:** The core mathematical engine that evaluates probability vs. cost.
+- **Deep Customer Snapshot:** Analyzes LTV, successful payment history, and subscription status to inform the AI's aggressiveness.
+- **Deterministic Policy Engine:** An impenetrable wall between the AI and execution. The AI recommends (e.g., "Voice Call"), but the code decides if it's allowed (e.g., "BLOCKED: Max attempts reached").
+- **Real Razorpay Integration:** Dynamically generates **real** Razorpay Payment Links (`plink_xxx`) and listens to live Razorpay Webhooks (`payment.failed`, `payment_link.paid`) for a 100% autonomous, closed-loop system.
+- **Deep Dive UI:** A bespoke, dark-themed Next.js dashboard ("Control Tower") visualizing the AI's causal diagnosis and expected value decay curves.
+
+---
+
+## 🚀 The Ultimate Live Demo
+
+You can run this project in two modes: **Demo Mode** (automatically seeds 81 simulated cases) or **Production Mode** (listens to live Razorpay webhooks).
+
+### Option A: The "One-Click" Demo Mode
+This starts the backend with an in-memory database and 81 synthetic cases to showcase the UI and Batch Recovery instantly.
+
+**1. Start Backend**
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+DEMO_MODE=true PYTHONPATH=. .venv/bin/uvicorn app.main:app --port 8000
+```
+
+**2. Start Frontend**
+```bash
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
+```
+
+Navigate to `http://localhost:3000`. Click **LAUNCH RECOVERY** to watch the AI process all 81 cases in the background! Click any case to see the Deep Dive Matrix.
+
+### Option B: The Live Production Integration (Recommended for Judges)
+*Want to see real magic?* Hook RevenueMind directly up to your Razorpay Test Account!
+
+1. Create a `.env` in the `backend/` directory with your Razorpay Test Keys:
+```
+RAZORPAY_KEY_ID="rzp_test_xxxx"
+RAZORPAY_KEY_SECRET="yyyyyy"
+RAZORPAY_WEBHOOK_SECRET="zzzzzz"
+```
+2. Start the backend *without* DEMO_MODE:
+```bash
+PYTHONPATH=. .venv/bin/uvicorn app.main:app --port 8000
+```
+3. Expose your backend via Ngrok:
+```bash
+ngrok http 8000
+```
+4. In your Razorpay Dashboard, add a webhook to `https://<your-ngrok>.app/api/v1/webhooks/razorpay` subscribing to `payment.failed` and `payment_link.paid`.
+5. **The Test:** Go fail a test payment on Razorpay. Watch it instantly appear in the RevenueMind Queue. Click "Run Recovery". The AI will hit the Razorpay API and generate a *real* payment link. Pay the link, and watch the case autonomously move to "Recovered"!
 
 ## Architecture
 
-```
-User/Agent Intent
-       ↓
-AI Intent Parser (Gemini)
-       ↓
-Catalog Search (DB)
-       ↓
-AI Product Ranking (Gemini)
-       ↓
-PolicyEngine (DETERMINISTIC)
-       ↓
-PreflightGuard (DETERMINISTIC)
-       ↓
-Authorization Gate (DETERMINISTIC)
-       ↓
-Razorpay Order/Payment
-       ↓
-Webhook Verification (HMAC-SHA256)
-       ↓
-Audit Trail
-```
+- **Frontend:** Next.js 16 (App Router), React, Tailwind CSS (Razorpay Dark Theme), Lucide Icons.
+- **Backend:** FastAPI, Python 3.9, SQLAlchemy (Async), Pydantic v2.
+- **AI Core:** Gemini 1.5 Flash (via `google-genai` SDK), Structural Parsing, Causal Diagnosis.
+- **Payments:** Official `razorpay` Python SDK.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
-See [SECURITY.md](SECURITY.md) for the trust boundary model.
-See [DEMO.md](DEMO.md) for the 5-minute demo script.
-
-## Quick Start
-
-### Prerequisites
-- Python 3.9+
-- Node.js 18+
-- Razorpay Test Account (for live payments)
-- Gemini API Key (for AI features)
-
-### Backend
-
-```bash
-cd backend
-cp ../.env.example ../.env
-# Edit .env with your API keys
-
-source .venv/bin/activate
-# or: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
-
-# Run in demo mode (no external DB or API keys required):
-DEMO_MODE=true PYTHONPATH=. uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-# Open http://localhost:3000
-```
-
-### Run Tests
-
-```bash
-cd backend
-PYTHONPATH=. .venv/bin/pytest tests/ -v
-```
-
-## Demo Mode
-
-Set `DEMO_MODE=true` to run with:
-- In-memory SQLite database (no PostgreSQL required)
-- Pre-seeded products, mandates, and inventory
-- Simulated Razorpay order/payment creation (deterministic, no real charges)
-- Real AI provider (requires `GEMINI_API_KEY`) or mock fallback
-- All deterministic safety checks remain fully active
-
-**Demo mode never fakes payment success.** The deterministic guards, policy engine, preflight checks, and audit trail all execute identically to production mode.
-
-## Project Structure
-
-```
-merchantmind/
-├── backend/
-│   ├── app/
-│   │   ├── ai/               # AI Provider layer (Gemini)
-│   │   │   ├── provider.py   # Abstract interface
-│   │   │   └── gemini_provider.py
-│   │   ├── api/              # REST endpoints + Orchestrator
-│   │   │   ├── agent.py      # AgentOrchestrator
-│   │   │   ├── endpoints.py  # FastAPI routes
-│   │   │   └── demo.py       # Demo-specific endpoints
-│   │   ├── core/             # Deterministic financial core
-│   │   │   ├── policy_engine.py
-│   │   │   ├── preflight_guard.py
-│   │   │   ├── webhook_verifier.py
-│   │   │   ├── razorpay_client.py
-│   │   │   ├── errors.py
-│   │   │   └── logger.py
-│   │   ├── db/               # Database layer
-│   │   │   ├── session.py
-│   │   │   └── repository.py
-│   │   ├── mcp/              # MCP Storefront
-│   │   │   └── storefront.py
-│   │   ├── models/           # SQLAlchemy ORM
-│   │   │   └── all_models.py
-│   │   ├── schemas/          # Pydantic schemas
-│   │   │   └── schemas.py
-│   │   └── main.py           # FastAPI entrypoint
-│   └── tests/
-├── frontend/                 # Next.js UI
-└── docs/
-```
-
-## Prototype Limitations
-
-This is a hackathon MVP. Known limitations:
-
-1. **Test-mode payments only.** Razorpay keys must be test keys (`rzp_test_*`). No real money is processed.
-2. **Single-merchant MVP.** The current implementation supports one merchant storefront.
-3. **In-memory demo database.** Demo mode uses SQLite in-memory. Production would use PostgreSQL with proper migrations.
-4. **Simulated mandate identity.** In production, mandates would be cryptographically signed and verified against a principal (user) identity. The MVP uses UUID-based lookup.
-5. **Concurrency.** The `PreflightGuard` inventory check is application-level. Production would use `SELECT ... FOR UPDATE` row-level locking or atomic `UPDATE ... WHERE inventory > 0 RETURNING *` for true ACID guarantees.
-6. **Single AI provider.** Currently supports Gemini only. The `LLMProvider` abstract base class allows swapping providers.
-7. **No persistent sessions.** Shopping sessions are ephemeral per request.
-
-## Environment Variables
-
-See [.env.example](.env.example) for all required variables.
-
-## License
-
-Built for the Razorpay AI Builder Internship 2026.
+Built with 🖤 for the Razorpay AI Buildathon.

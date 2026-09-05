@@ -100,3 +100,8 @@ class DailySpend(Base):
     mandate_id = uuid_column(primary_key=True)
     spend_date = Column(Date, primary_key=True, default=date.today)
     total_paise = Column(Integer, nullable=False, default=0)
+
+
+# Import recovery models so Base.metadata.create_all() creates their tables.
+# Must be after the GUID/uuid_column helpers are defined above.
+from app.models import recovery_models  # noqa: E402, F401
