@@ -367,7 +367,8 @@ class RecoveryRepository:
         await self.session.execute(
             update(RevenueRiskCase)
             .where(RevenueRiskCase.status.in_([
-                CaseStatus.RECOVERED, CaseStatus.ESCALATED, CaseStatus.STOPPED, CaseStatus.FAILED
+                CaseStatus.RECOVERED, CaseStatus.ESCALATED, CaseStatus.STOPPED, 
+                CaseStatus.FAILED, CaseStatus.VERIFIED_RECOVERED, CaseStatus.AWAITING_PAYMENT
             ]))
             .values(
                 status=CaseStatus.PENDING,

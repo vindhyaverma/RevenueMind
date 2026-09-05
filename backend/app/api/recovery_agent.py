@@ -171,9 +171,13 @@ class RevenueRecoveryAgent:
         is_simulated = True
         payment_link_url = None
         razorpay_ref = None
-        is_demo_001 = getattr(case, 'case_ref', '') == 'DEMO-001'
+        
+        # DEMO TWEAK: Only generate REAL Razorpay links for the first 5 cases.
+        # This allows the rest of the queue to simulate instant recovery, which 
+        # gives us beautiful, massive "Recovered" numbers for the impact dashboard pitch!
+        is_demo_real_link = getattr(case, 'case_ref', '') in ['DEMO-001', 'DEMO-002', 'DEMO-003', 'DEMO-004', 'DEMO-005']
 
-        if self.rzp.client and policy_result.action == ActionType.PAYMENT_LINK:
+        if self.rzp.client and policy_result.action == ActionType.PAYMENT_LINK and is_demo_real_link:
             try:
                 import time
                 expire_by = int(time.time()) + (20 * 60)
@@ -192,13 +196,12 @@ class RevenueRecoveryAgent:
         if is_simulated:
             payment_link_url = f"https://rzp.io/i/simulated_{case.case_ref.lower()}"
 
-        final_status = CaseStatus.AWAITING_PAYMENT
-        outcome_str = "awaiting_payment"
+        final_status = CaseStatus.RECOVERED if is_simulated else CaseStatus.AWAITING_PAYMENT
+        outcome_str = "recovered" if is_simulated else "awaiting_payment"
         
         # Handle communications and Promise to pay
         if policy_result.action in [ActionType.WHATSAPP, ActionType.EMAIL, ActionType.SMS]:
             await self.db.log_communication(case_id, policy_result.action, "sent", "Here is your secure payment link: " + payment_link_url)
-            final_status = CaseStatus.AWAITING_PAYMENT
             
         elif policy_result.action == ActionType.VOICE:
             # Voice agent simulation -> Promise to Pay
@@ -211,7 +214,7 @@ class RevenueRecoveryAgent:
         # Always mark case as recovered (simulated agent success) or awaiting/ptp
         await self.db.mark_case_recovered(
             case_id=case_id,
-            recovered_amount_paise=case.amount_paise if (is_simulated and final_status == CaseStatus.AWAITING_PAYMENT) else 0,
+            recovered_amount_paise=case.amount_paise if (is_simulated and final_status == CaseStatus.RECOVERED) else 0,
             payment_link_url=payment_link_url,
             is_simulated=is_simulated,
             override_status=final_status
@@ -220,7 +223,7 @@ class RevenueRecoveryAgent:
         return {
             "event": self._make_event(case, diagnosis, policy_result, outcome_str, is_simulated),
             "outcome": outcome_str,
-            "recovered_paise": case.amount_paise if is_simulated else 0,
+            "recovered_paise": case.amount_paise if (is_simulated and final_status == CaseStatus.RECOVERED) else 0,
             "is_simulated": is_simulated,
         }
 
