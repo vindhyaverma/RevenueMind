@@ -475,6 +475,17 @@ class RecoveryRepository:
         # Latest run info
         latest_run = await self.get_latest_run()
 
+        # EV rollup — sum from individual cases (written by agent)
+        ev_q = await self.session.execute(
+            select(func.sum(RevenueRiskCase.expected_recovered_paise))
+        )
+        expected_ev = ev_q.scalar() or 0
+
+        cost_q = await self.session.execute(
+            select(func.sum(RevenueRiskCase.recovery_cost_paise))
+        )
+        total_cost = cost_q.scalar() or 0
+
         return MetricsSchema(
             total_at_risk_paise=total_at_risk,
             recoverable_paise=recoverable,
@@ -482,6 +493,9 @@ class RecoveryRepository:
             agent_recovered_paise=agent_recovered,
             razorpay_verified_paise=razorpay_verified,
             recovery_rate=recovery_rate,
+            recovery_cost_paise=total_cost,
+            expected_recovered_paise=expected_ev,
+            net_recovered_paise=recovered - total_cost,
             total_cases=total_c,
             success_count=success_c,
             escalated_count=escalated_c,
